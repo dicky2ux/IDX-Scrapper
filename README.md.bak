@@ -1,0 +1,221 @@
+# IDX Scraper — Panduan Lengkap untuk Pemula
+
+Alat ini mengekspor pengumuman dari situs Bursa Efek Indonesia (IDX). Hasil export berisi kolom:
+
+- Kode_Emiten
+- Judul_Pengumuman
+- Tanggal_Pengumuman
+
+Panduan ini ditulis untuk pengguna pemula: langkah demi langkah dari menginstal VSCode, memasang Python, sampai menjalankan program dan mendapatkan file CSV.
+
+---
+
+## Ringkasan singkat (apa yang akan dilakukan)
+
+1. Install Visual Studio Code (opsional tapi direkomendasikan).
+2. Install Python 3.
+3. Buka proyek di VSCode dan buka terminal bawaan.
+4. Buat virtual environment dan pasang dependensi.
+5. Install Playwright browser binaries (sekali per mesin).
+6. Buat file `.env` menggunakan helper interaktif.
+7. Jalankan login interaktif sekali (selesaikan Cloudflare challenge).
+8. Jalankan scraping headless untuk menghasilkan `out.csv`.
+
+---
+
+## Persiapan awal
+
+Sebelum mulai, siapkan:
+
+- Komputer dengan koneksi internet.
+- Akun yang terdaftar di IDX (jika diperlukan untuk login).
+- Izin untuk menginstall perangkat lunak (di PC kantor Anda mungkin perlu hak admin).
+
+Jika Anda menemui masalah pada langkah mana pun, salin pesan error dan kirimkan ke saya — saya bantu lanjut.
+
+---
+
+## 1. Instal Visual Studio Code (VSCode) — singkat
+
+VSCode berguna karena menyediakan editor dan terminal terintegrasi.
+
+- macOS / Windows: unduh dari https://code.visualstudio.com/ dan jalankan installer.
+- Ubuntu/Debian:
+
+```bash
+sudo apt update
+sudo apt install -y wget apt-transport-https software-properties-common
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+sudo install -o root -g root -m 644 microsoft.gpg /usr/share/keyrings/
+sudo sh -c 'echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'
+sudo apt update
+sudo apt install -y code
+```
+
+Buka VSCode setelah terpasang.
+
+---
+
+## 2. Install Python 3 (cek dulu apakah sudah ada)
+
+Cek versi Python di Terminal / PowerShell:
+
+```bash
+python3 --version
+```
+
+Jika muncul `Python 3.x`, lanjut. Jika belum terpasang, ikuti sesuai OS:
+
+- macOS (Homebrew):
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"  # jika belum punya Homebrew
+brew install python
+```
+
+- Ubuntu / Debian:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip
+```
+
+- Windows:
+
+1. Unduh installer dari https://www.python.org/downloads/windows/
+2. Jalankan installer dan centang "Add Python to PATH".
+
+Verifikasi lagi setelah install:
+
+```bash
+python3 --version
+pip3 --version
+```
+
+---
+
+## 3. Buka proyek di VSCode dan terminal
+
+1. Buka VSCode → File → Open Folder... → pilih folder proyek (mis. `IDX-Scrapper`).
+2. Buka Terminal di VSCode: View → Terminal (atau tekan Ctrl+`). Terminal ini yang akan kita gunakan.
+
+---
+
+## 4. Buat virtual environment dan pasang dependensi
+
+Di terminal (pastikan berada di folder proyek):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate   # macOS/Linux
+# Di PowerShell Windows: . .\.venv\Scripts\Activate.ps1
+
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+Virtualenv menjaga paket proyek terpisah dari paket sistem.
+
+---
+
+## 5. Install Playwright browsers (wajib untuk mode Playwright)
+
+Playwright membutuhkan browser binaries. Jalankan sekali per mesin:
+
+```bash
+python -m playwright install
+```
+
+Jika jaringan atau izin bermasalah, salin pesan error dan beri tahu saya.
+
+---
+
+## 6. Membuat `.env` dengan helper (opsional, untuk lokal)
+
+Jalankan helper interaktif untuk membuat file `.env` yang menyimpan kredensial lokal:
+
+```bash
+python3 scripts/create_env.py
+# atau via helper: ./idx env
+```
+
+Helper akan menanyakan email, password, dan opsi proxy. File `.env` akan dibuat di folder proyek. Jangan commit `.env` ke Git (tertera di `.gitignore`).
+
+Untuk CI/production, lebih aman menggunakan Secrets (mis. GitHub Secrets) daripada `.env`.
+
+---
+
+## 7. Login interaktif — jalankan sekali pada mesin dengan browser GUI
+
+Beberapa proteksi (Cloudflare) mengharuskan interaksi manusia. Di mesin dengan browser GUI jalankan:
+
+```bash
+python3 export_idx_keywords_csv.py --output tmp_after_login.csv --login --login-email you@example.com --login-password "PASSWORD"
+# atau via helper
+./idx login --email you@example.com --password "PASSWORD" --save-credentials
+```
+
+Jika berhasil, skrip menyimpan `storage_state` (cookies + localStorage) ke:
+
+```
+~/.config/idx-scraper/playwright_storage_state.json
+```
+
+File ini memungkinkan scraping headless non-interaktif di mesin yang sama.
+
+---
+
+## 8. Menjalankan scraping headless (otomatis) dan mendapatkan CSV
+
+Jika `storage_state` sudah ada, jalankan:
+
+```bash
+python3 export_idx_keywords_csv.py --output out.csv --automated-playwright --headless
+# atau via helper
+./idx run --output out.csv --headless
+```
+
+File `out.csv` akan dibuat di folder kerja (atau path yang Anda beri). CSV memakai pemisah `;` (titik koma). Jika Excel menampilkan data dalam satu kolom, gunakan fitur import dan pilih delimiter `;`.
+
+Contoh melihat 10 baris pertama di terminal:
+
+```bash
+head -n 10 out.csv
+```
+
+---
+
+## 9. Menjalankan terjadwal (cron) atau di GitHub Actions
+
+- Cron: pastikan `~/.config/idx-scraper/playwright_storage_state.json` ada untuk user yang menjalankan cron. Contoh entry crontab:
+
+```cron
+0 2 * * * cd /path/to/idx-scraper && /usr/bin/python3 export_idx_keywords_csv.py --output /path/to/output/idx_$(date +\%Y\%m\%d).csv --automated-playwright --headless
+```
+
+- GitHub Actions: saya telah menambahkan contoh `scrape.yml`. Simpan `IDX_AUTH_EMAIL` dan `IDX_AUTH_PASSWORD` di GitHub Secrets. Perhatikan: Cloudflare kadang meminta interaksi manusia sehingga job CI bisa gagal.
+
+---
+
+## 10. Troubleshooting cepat untuk pemula
+
+- "Command not found" untuk `python3` atau `pip`:
+  - Python belum terpasang atau PATH belum diatur.
+- Playwright meminta install browser:
+  - Jalankan `python -m playwright install`.
+- Hasil CSV kosong atau berisi HTML:
+  - Cloudflare memblokir permintaan headless — jalankan login interaktif di mesin dengan GUI.
+- Excel menampilkan semua data dalam satu kolom:
+  - Saat import, pilih `;` sebagai delimiter.
+
+Jika error muncul, salin pesan error dan kirim ke saya agar saya bantu perbaiki.
+
+---
+
+## 11. Keamanan dan catatan penting
+
+- Jangan commit `.env`, `playwright_storage_state.json`, atau file yang berisi cookie/credential ke Git.
+- Untuk otomatisasi di CI, gunakan Secrets (GitHub Secrets, GitLab CI variables, dsb.).
+- Menyimpan `storage_state` antar-run sebagai artifact ada risiko keamanan — saya bisa bantu opsi aman jika perlu.
+
+---

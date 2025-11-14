@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Simple front-end CLI for the IDX scraper.
+
+Usage examples:
+  ./idx run --output out.csv --headless
+  ./idx login --email you@example.com --password SECRET --save-credentials
+  ./idx interactive
+  ./idx persist-login --email you@example.com --password SECRET
+"""
+
+import argparse
+import subprocess
+import sys
+from pathlib import Path
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+EXPORT_SCRIPT = SCRIPT_DIR / "export_idx_keywords_csv.py"
+
+
+def run_export(args: argparse.Namespace) -> int:
+    cmd = [
+        sys.executable,
+        str(EXPORT_SCRIPT),
+        "--output",
+        args.output,
+        "--automated-playwright",
+    ]
+    if args.headless:
+        cmd.append("--headless")
+    if args.persist_login:
+        cmd.append("--persist-login")
+    if args.proxy:
+        cmd.extend(["--proxy", args.proxy])
+    if args.date_from:
+        cmd.extend(["--date-from", args.date_from])
+    if args.date_to:
+        cmd.extend(["--date-to", args.date_to])
+    if args.auth_token:
+        cmd.extend(["--auth-token", args.auth_token])
+    print("Running:", " ".join(cmd))
+    return subprocess.call(cmd)
+
+
+def do_login(args: argparse.Namespace) -> int:
+    cmd = [sys.executable, str(EXPORT_SCRIPT), "--login", "--output", args.output]
+    if args.email:
+        cmd.extend(["--login-email", args.email])
+    if args.password:
+        cmd.extend(["--login-password", args.password])
+    if args.save_credentials:
+        cmd.append("--save-credentials")
+    if args.keyring_service:
+        cmd.extend(["--keyring-service", args.keyring_service])
+    if args.proxy:
+        cmd.extend(["--proxy", args.proxy])
+    print("Running:", " ".join(cmd))
+    return subprocess.call(cmd)
+
+
+def do_interactive(args: argparse.Namespace) -> int:
+    cmd = [sys.executable, str(EXPORT_SCRIPT), "--interactive", "--output", args.output]
+    if args.debug:
+        cmd.append("--debug")
+    if args.proxy:
+        cmd.extend(["--proxy", args.proxy])
+    print("Running:", " ".join(cmd))
+    return subprocess.call(cmd)
+
+
+def main():
+    p = argparse.ArgumentParser(prog="idx", description="IDX scraper helper CLI")
+    sub = p.add_subparsers(dest="cmd")
+
+    p_run = sub.add_parser(
+        "run", help="Run headless automated export using saved storage state"
+    )
+    p_run.add_argument("--output", "-o", default="tmp_idx_scrapper.csv")
+    p_run.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run headless (default pass --headless to exporter)",
+    )
+    p_run.add_argument(
+        "--persist-login",
+        action="store_true",
+        help="Attempt login if storage state missing",
+    )
+    p_run.add_argument("--proxy", help="Proxy URL (http://user:pass@host:port)")
+    p_run.add_argument("--date-from")
+    p_run.add_argument("--date-to")
+    p_run.add_argument(
+        "--auth-token", help="Optional auth token to inject into localStorage"
+    )
+
+    p_login = sub.add_parser(
+        "login", help="Perform interactive login and optionally save credentials"
+    )
+    p_login.add_argument("--output", "-o", default="tmp_idx_scrapper_after_login.csv")
+    p_login.add_argument("--email")
+    p_login.add_argument("--password")
+    p_login.add_argument("--save-credentials", action="store_true")
+    p_login.add_argument("--keyring-service", default="idx-scraper")
+    p_login.add_argument("--proxy")
+
+    p_int = sub.add_parser(
+        "interactive",
+        help="Open headed browser to solve challenge and capture storage state",
+    )
+    p_int.add_argument(
+        "--output", "-o", default="tmp_idx_scrapper_after_interactive.csv"
+    )
+    p_int.add_argument("--debug", action="store_true")
+    p_int.add_argument("--proxy")
+
+    p_persist = sub.add_parser(
+        "persist-login", help="Attempt headless login first, fallback to interactive"
+    )
+    p_persist.add_argument("--email")
+    p_persist.add_argument("--password")
+    p_persist.add_argument("--proxy")
+    p_persist.add_argument("--output", "-o", default="tmp_idx_scrapper_persist.csv")
+
+    p_install = sub.add_parser(
+        "install", help="Install Python requirements and Playwright browsers"
+    )
+    p_install.add_argument(
+        "--requirements", default="requirements.txt", help="Path to requirements file"
+    )
+    p_install.add_argument(
+        "--skip-browsers",
+        action="store_true",
+        help="Install Python deps only; skip Playwright browser install",
+    )
+
+    if len(sys.argv) == 1:
+        p.print_help()
+        return 1
+
+    sub.add_parser(
+        "env",
+        help="Run interactive helper to create a local .env (IDX_AUTH_EMAIL/IDX_AUTH_PASSWORD)",
+    )
+
+    args = p.parse_args()
+    if args.cmd == "run":
+        return run_export(args)
+    if args.cmd == "login":
+        return do_login(args)
+    if args.cmd == "interactive":
+        return do_interactive(args)
+    if args.cmd == "env":
+        # run the helper script
+        helper = SCRIPT_DIR / "scripts" / "create_env.py"
+        if not helper.exists():
+            print(f"Env helper not found at {helper}")
+            return 2
+        cmd = [sys.executable, str(helper)]
+        print("Running:", " ".join(cmd))
+        return subprocess.call(cmd)
+    if args.cmd == "persist-login":
+        # persist-login maps to exporter automated-playwright with --persist-login
+        cmd = [
+            sys.executable,
+            str(EXPORT_SCRIPT),
+            "--output",
+            args.output,
+            "--automated-playwright",
+            "--persist-login",
+        ]
+        if args.proxy:
+            cmd.extend(["--proxy", args.proxy])
+        if args.email:
+            cmd.extend(["--login-email", args.email])
+        if args.password:
+            cmd.extend(["--login-password", args.password])
+        print("Running:", " ".join(cmd))
+        return subprocess.call(cmd)
+
+    if args.cmd == "install":
+        # Install Python requirements then Playwright browsers (unless skipped)
+        req = args.requirements
+        cmd_pip = [sys.executable, "-m", "pip", "install", "-r", req]
+        print("Running:", " ".join(cmd_pip))
+        rc = subprocess.call(cmd_pip)
+        if rc != 0:
+            return rc
+        if not args.skip_browsers:
+            cmd_pw = [sys.executable, "-m", "playwright", "install"]
+            print("Running:", " ".join(cmd_pw))
+            return subprocess.call(cmd_pw)
+        return 0
+
+    p.print_help()
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
